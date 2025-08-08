@@ -75,16 +75,22 @@ PluginEditor::PluginEditor(AudioProcessor& p)
         QCoreApplication::setAttribute(Qt::AA_PluginApplication);
         
 #ifdef __linux__
-        // Linux-specific fixes for OpenGL context
+        // Linux-specific fixes for OpenGL context and window management
         QCoreApplication::setAttribute(Qt::AA_UseOpenGLES, false);
         QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
         QCoreApplication::setAttribute(Qt::AA_UseSoftwareOpenGL, false);
         QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL, true);
+        QCoreApplication::setAttribute(Qt::AA_X11InitThreads, true);
+        QCoreApplication::setAttribute(Qt::AA_SynthesizeMouseForUnhandledTouchEvents, false);
         
         // Ensure proper platform plugin selection
         if (qgetenv("QT_QPA_PLATFORM").isEmpty()) {
             qputenv("QT_QPA_PLATFORM", "xcb"); // Force X11 backend
         }
+        
+        // Set additional environment variables for X11
+        qputenv("QT_AUTO_SCREEN_SCALE_FACTOR", "0");
+        qputenv("QT_QUICK_BACKEND", "rhi");
 #endif
         
         static int argc = 1; static char *argv[] = { const_cast<char*>("") };

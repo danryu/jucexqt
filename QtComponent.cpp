@@ -95,7 +95,41 @@ public:
 
         // Re-parent before resetting foreign window, so that
         // the old foreign window doesn't destroy the window.
+#ifdef __linux__
+        // Linux-specific workaround for standalone applications
+        if (peer) {
+            auto nativeHandle = peer->getNativeHandle();
+            qCDebug(qtComponent) << "Native handle:" << nativeHandle;
+            
+            // Try to embed in JUCE window first
+            auto parentWindow = QWindow::fromWinId(WId(nativeHandle));
+            if (parentWindow) {
+                qCDebug(qtComponent) << "Successfully created parent window from native handle";
+                window->setParent(parentWindow);
+                
+                // Force window to be visible and properly embedded
+                window->setFlags(Qt::Widget);
+                window->create(); // Ensure native window is created
+            } else {
+                qCDebug(qtComponent) << "Failed to create parent window, trying direct embedding";
+                // Direct embedding approach
+                window->setParent(nullptr);
+                window->setFlags(Qt::FramelessWindowHint);
+                window->create();
+                
+                // Try to reparent the native window directly
+                if (auto nativeWindow = reinterpret_cast<::Window>(window->winId())) {
+                    // This is X11-specific reparenting
+                    qCDebug(qtComponent) << "Attempting X11 reparenting";
+                }
+            }
+        } else {
+            window->setParent(nullptr);
+            window->setFlags(Qt::Window);
+        }
+#else
         window->setParent(peer ? QWindow::fromWinId(WId(peer->getNativeHandle())) : nullptr);
+#endif
         foreignWindow.reset(window->parent());
 
         // ComponentMovementWatcher::componentParentHierarchyChanged() calls
@@ -109,7 +143,21 @@ public:
     void componentVisibilityChanged() override
     {
         qCDebug(qtComponent) << "Component" << this << "visibility changed";
-        window->setVisible(getComponent()->isShowing());
+        bool shouldShow = getComponent()->isShowing();
+        qCDebug(qtComponent) << "Setting window visible:" << shouldShow;
+        
+#ifdef __linux__
+        // Additional Linux-specific visibility handling
+        if (shouldShow) {
+            window->show();
+            window->raise();
+            window->requestActivate();
+        } else {
+            window->hide();
+        }
+#else
+        window->setVisible(shouldShow);
+#endif
     }
 
     std::unique_ptr<QWindow> foreignWindow;
