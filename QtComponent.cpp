@@ -88,49 +88,32 @@ public:
 
     void componentPeerChanged() override
     {
-        qCDebug(qtComponent) << "Component" << this << "peer changed";
+        std::cout << "=== QtComponent peer changed ===" << std::endl;
 
         auto *component = getComponent();
         auto *peer = component->getPeer();
 
-        // Re-parent before resetting foreign window, so that
-        // the old foreign window doesn't destroy the window.
-#ifdef __linux__
-        // Linux-specific workaround for standalone applications
         if (peer) {
             auto nativeHandle = peer->getNativeHandle();
-            qCDebug(qtComponent) << "Native handle:" << nativeHandle;
+            std::cout << "=== JUCE peer native handle: " << nativeHandle << " ===" << std::endl;
             
-            // Try to embed in JUCE window first
+            // Re-parent before resetting foreign window, so that
+            // the old foreign window doesn't destroy the window.
             auto parentWindow = QWindow::fromWinId(WId(nativeHandle));
             if (parentWindow) {
-                qCDebug(qtComponent) << "Successfully created parent window from native handle";
+                std::cout << "=== Successfully created Qt parent window from JUCE handle ===" << std::endl;
                 window->setParent(parentWindow);
-                
-                // Force window to be visible and properly embedded
-                window->setFlags(Qt::Widget);
-                window->create(); // Ensure native window is created
+                foreignWindow.reset(parentWindow);
             } else {
-                qCDebug(qtComponent) << "Failed to create parent window, trying direct embedding";
-                // Direct embedding approach
+                std::cout << "=== Failed to create Qt parent window from JUCE handle ===" << std::endl;
                 window->setParent(nullptr);
-                window->setFlags(Qt::FramelessWindowHint);
-                window->create();
-                
-                // Try to reparent the native window directly
-                if (auto nativeWindow = reinterpret_cast<::Window>(window->winId())) {
-                    // This is X11-specific reparenting
-                    qCDebug(qtComponent) << "Attempting X11 reparenting";
-                }
+                foreignWindow.reset(nullptr);
             }
         } else {
+            std::cout << "=== No JUCE peer found ===" << std::endl;
             window->setParent(nullptr);
-            window->setFlags(Qt::Window);
+            foreignWindow.reset(nullptr);
         }
-#else
-        window->setParent(peer ? QWindow::fromWinId(WId(peer->getNativeHandle())) : nullptr);
-#endif
-        foreignWindow.reset(window->parent());
 
         // ComponentMovementWatcher::componentParentHierarchyChanged() calls
         // componentMovedOrResized(true, true), but goes via the component overload,
@@ -142,22 +125,16 @@ public:
 
     void componentVisibilityChanged() override
     {
-        qCDebug(qtComponent) << "Component" << this << "visibility changed";
+        std::cout << "=== QtComponent visibility changed ===" << std::endl;
         bool shouldShow = getComponent()->isShowing();
-        qCDebug(qtComponent) << "Setting window visible:" << shouldShow;
-        
-#ifdef __linux__
-        // Additional Linux-specific visibility handling
+        std::cout << "=== Component showing: " << shouldShow << " ===" << std::endl;
+        window->setVisible(shouldShow);
         if (shouldShow) {
             window->show();
             window->raise();
-            window->requestActivate();
-        } else {
-            window->hide();
+            window->requestUpdate(); // Force a paint event
+            std::cout << "=== Qt window made visible, raised, and update requested ===" << std::endl;
         }
-#else
-        window->setVisible(shouldShow);
-#endif
     }
 
     std::unique_ptr<QWindow> foreignWindow;

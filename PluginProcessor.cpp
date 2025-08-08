@@ -3,9 +3,21 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <iostream>
+
+AudioPluginAudioProcessor::AudioPluginAudioProcessor()
+{
+    std::cout << "=== AudioPluginAudioProcessor constructor called ===" << std::endl;
+}
+
+AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
+{
+    std::cout << "=== AudioPluginAudioProcessor destructor called ===" << std::endl;
+}
 
 juce::AudioProcessorEditor* AudioPluginAudioProcessor::createEditor()
 {
+    std::cout << "=== AudioPluginAudioProcessor::createEditor() called ===" << std::endl;
     return new PluginEditor(*this);
 }
 

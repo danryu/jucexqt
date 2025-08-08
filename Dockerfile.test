@@ -1,0 +1,42 @@
+FROM ubuntu:22.04
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    cmake \
+    build-essential \
+    pkg-config \
+    libfreetype6-dev \
+    libx11-dev \
+    libxinerama-dev \
+    libxrandr-dev \
+    libxcursor-dev \
+    libxcomposite-dev \
+    libxss-dev \
+    libasound2-dev \
+    libjack-jackd2-dev \
+    qt6-base-dev \
+    qt6-declarative-dev \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install JUCE
+WORKDIR /tmp
+RUN git clone --depth 1 --branch 7.0.0 https://github.com/juce-framework/JUCE.git
+RUN cd JUCE && cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+RUN cd JUCE && cmake --build build --target install
+
+WORKDIR /app
+COPY . .
+
+# Set environment for X11 display (for testing)
+ENV DISPLAY=:99
+ENV QT_QPA_PLATFORM=offscreen
+ENV QT_LOGGING_RULES="juce.qt.*=true"
+
+# Build the project
+RUN mkdir -p build && cd build && \
+    cmake .. -DCMAKE_PREFIX_PATH="/usr/local;/usr/lib/x86_64-linux-gnu/cmake/Qt6" && \
+    make -j$(nproc)
+
+CMD ["bash"]

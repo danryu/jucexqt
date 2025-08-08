@@ -8,8 +8,8 @@
 class AudioPluginAudioProcessor  : public juce::AudioProcessor
 {
 public:
-    AudioPluginAudioProcessor() = default;
-    ~AudioPluginAudioProcessor() override = default;
+    AudioPluginAudioProcessor();
+    ~AudioPluginAudioProcessor() override;
 
     const juce::String getName() const override { return JucePlugin_Name; }
 
