@@ -5,29 +5,26 @@
 
 #include <QtCore/qloggingcategory.h>
 #include <QtGui/qwindow.h>
-#include <QtQuick/qquickview.h>
-#include <QtQml/qqmlengine.h>
-#include <QtGui/qguiapplication.h>
-#include <juce_core/juce_core.h>
 
 Q_LOGGING_CATEGORY(qtComponent, "juce.qt.component")
 
 using namespace juce;
 
-// JUCE Timer class for processing Qt events in standalone mode
+#if defined(__linux__) && defined(JUCE_STANDALONE_APPLICATION)
+#include <QtQuick/qquickview.h>
+#include <QtGui/qguiapplication.h>
+#include <juce_core/juce_core.h>
+
+// JUCE Timer class for processing Qt events in Linux standalone mode
 class QtEventProcessorTimer : public juce::Timer
 {
 public:
-    QtEventProcessorTimer(QQuickView* view) : quickView(view), tickCount(0) {}
+    QtEventProcessorTimer(QQuickView* view) : quickView(view) {}
     
     void timerCallback() override
     {
         if (qGuiApp) {
             qGuiApp->processEvents();
-            tickCount++;
-            if (tickCount % 60 == 0) { // Log every second
-                std::cout << "=== JUCE Qt event timer tick " << tickCount << " ===\n";
-            }
             // Force Qt Quick to render
             if (quickView) {
                 quickView->update();
@@ -37,8 +34,8 @@ public:
     
 private:
     QQuickView* quickView;
-    int tickCount;
 };
+#endif
 
 class QtComponent::Pimpl : public QObject, public ComponentMovementWatcher
 {
@@ -118,32 +115,15 @@ public:
 
     void componentPeerChanged() override
     {
-        std::cout << "=== QtComponent peer changed ===" << std::endl;
+        qCDebug(qtComponent) << "Component" << this << "peer changed";
 
         auto *component = getComponent();
         auto *peer = component->getPeer();
 
-        if (peer) {
-            auto nativeHandle = peer->getNativeHandle();
-            std::cout << "=== JUCE peer native handle: " << nativeHandle << " ===" << std::endl;
-            
-            // Re-parent before resetting foreign window, so that
-            // the old foreign window doesn't destroy the window.
-            auto parentWindow = QWindow::fromWinId(WId(nativeHandle));
-            if (parentWindow) {
-                std::cout << "=== Successfully created Qt parent window from JUCE handle ===" << std::endl;
-                window->setParent(parentWindow);
-                foreignWindow.reset(parentWindow);
-            } else {
-                std::cout << "=== Failed to create Qt parent window from JUCE handle ===" << std::endl;
-                window->setParent(nullptr);
-                foreignWindow.reset(nullptr);
-            }
-        } else {
-            std::cout << "=== No JUCE peer found ===" << std::endl;
-            window->setParent(nullptr);
-            foreignWindow.reset(nullptr);
-        }
+        // Re-parent before resetting foreign window, so that
+        // the old foreign window doesn't destroy the window.
+        window->setParent(peer ? QWindow::fromWinId(WId(peer->getNativeHandle())) : nullptr);
+        foreignWindow.reset(window->parent());
 
         // ComponentMovementWatcher::componentParentHierarchyChanged() calls
         // componentMovedOrResized(true, true), but goes via the component overload,
@@ -155,43 +135,26 @@ public:
 
     void componentVisibilityChanged() override
     {
-        std::cout << "=== QtComponent visibility changed ===" << std::endl;
-        bool shouldShow = getComponent()->isShowing();
-        std::cout << "=== Component showing: " << shouldShow << " ===" << std::endl;
-        window->setVisible(shouldShow);
-        if (shouldShow) {
-            window->show();
-            window->raise();
-            window->requestUpdate(); // Force a paint event
-            
-            // For Qt Quick windows, force continuous rendering
+        qCDebug(qtComponent) << "Component" << this << "visibility changed";
+        window->setVisible(getComponent()->isShowing());
+        
+#if defined(__linux__) && defined(JUCE_STANDALONE_APPLICATION)
+        // Linux standalone: Start JUCE timer for Qt event processing
+        if (getComponent()->isShowing() && !qtEventTimer) {
             if (auto quickView = qobject_cast<QQuickView*>(window.get())) {
-                quickView->update();
-                quickView->requestUpdate();
-                // Force the render loop to start
-                if (auto engine = quickView->engine()) {
-                    engine->clearComponentCache();
-                }
-                
-                #ifdef JUCE_STANDALONE_APPLICATION
-                // For standalone, create a JUCE timer to regularly process Qt events
-                if (!qtEventTimer && qGuiApp) {
-                    qtEventTimer = std::make_unique<QtEventProcessorTimer>(quickView);
-                    qtEventTimer->startTimer(16); // 60 FPS
-                    std::cout << "=== Started JUCE Qt event processing timer for standalone ===" << std::endl;
-                }
-                #endif
-                
-                std::cout << "=== Forced QQuickView update and render loop start ===" << std::endl;
+                qtEventTimer = std::make_unique<QtEventProcessorTimer>(quickView);
+                qtEventTimer->startTimer(16); // ~60 FPS
             }
-            
-            std::cout << "=== Qt window made visible, raised, and update requested ===" << std::endl;
         }
+#endif
     }
 
     std::unique_ptr<QWindow> foreignWindow;
     std::unique_ptr<QWindow> window;
-    std::unique_ptr<QtEventProcessorTimer> qtEventTimer; // For standalone Qt event processing
+
+#if defined(__linux__) && defined(JUCE_STANDALONE_APPLICATION)
+    std::unique_ptr<QtEventProcessorTimer> qtEventTimer; // For Linux standalone Qt event processing
+#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Pimpl)
 };
