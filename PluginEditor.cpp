@@ -12,12 +12,22 @@ Q_LOGGING_CATEGORY(qtEditor, "juce.qt.editor")
 #if defined(QT_QUICK_LIB)
 
 #include <QtQuick/qquickview.h>
+#include <QtGui/qsurfaceformat.h>
 
 class EditorWindow : public QQuickView
 {
 public:
     EditorWindow()
     {
+#ifdef __linux__
+        // Ensure proper OpenGL context format on Linux
+        QSurfaceFormat format;
+        format.setDepthBufferSize(24);
+        format.setStencilBufferSize(8);
+        format.setVersion(3, 2);
+        format.setProfile(QSurfaceFormat::CoreProfile);
+        setFormat(format);
+#endif
         setSource(QUrl("qrc:/main.qml"));
         setResizeMode(QQuickView::SizeRootObjectToView);
     }
@@ -63,6 +73,20 @@ PluginEditor::PluginEditor(AudioProcessor& p)
 
     if (!qGuiApp) {
         QCoreApplication::setAttribute(Qt::AA_PluginApplication);
+        
+#ifdef __linux__
+        // Linux-specific fixes for OpenGL context
+        QCoreApplication::setAttribute(Qt::AA_UseOpenGLES, false);
+        QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
+        QCoreApplication::setAttribute(Qt::AA_UseSoftwareOpenGL, false);
+        QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL, true);
+        
+        // Ensure proper platform plugin selection
+        if (qgetenv("QT_QPA_PLATFORM").isEmpty()) {
+            qputenv("QT_QPA_PLATFORM", "xcb"); // Force X11 backend
+        }
+#endif
+        
         static int argc = 1; static char *argv[] = { const_cast<char*>("") };
         new QGuiApplication(argc, argv); // FIXME: Ref-count and dispose
     }
