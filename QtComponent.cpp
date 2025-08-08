@@ -5,10 +5,40 @@
 
 #include <QtCore/qloggingcategory.h>
 #include <QtGui/qwindow.h>
+#include <QtQuick/qquickview.h>
+#include <QtQml/qqmlengine.h>
+#include <QtGui/qguiapplication.h>
+#include <juce_core/juce_core.h>
 
 Q_LOGGING_CATEGORY(qtComponent, "juce.qt.component")
 
 using namespace juce;
+
+// JUCE Timer class for processing Qt events in standalone mode
+class QtEventProcessorTimer : public juce::Timer
+{
+public:
+    QtEventProcessorTimer(QQuickView* view) : quickView(view), tickCount(0) {}
+    
+    void timerCallback() override
+    {
+        if (qGuiApp) {
+            qGuiApp->processEvents();
+            tickCount++;
+            if (tickCount % 60 == 0) { // Log every second
+                std::cout << "=== JUCE Qt event timer tick " << tickCount << " ===\n";
+            }
+            // Force Qt Quick to render
+            if (quickView) {
+                quickView->update();
+            }
+        }
+    }
+    
+private:
+    QQuickView* quickView;
+    int tickCount;
+};
 
 class QtComponent::Pimpl : public QObject, public ComponentMovementWatcher
 {
@@ -133,12 +163,35 @@ public:
             window->show();
             window->raise();
             window->requestUpdate(); // Force a paint event
+            
+            // For Qt Quick windows, force continuous rendering
+            if (auto quickView = qobject_cast<QQuickView*>(window.get())) {
+                quickView->update();
+                quickView->requestUpdate();
+                // Force the render loop to start
+                if (auto engine = quickView->engine()) {
+                    engine->clearComponentCache();
+                }
+                
+                #ifdef JUCE_STANDALONE_APPLICATION
+                // For standalone, create a JUCE timer to regularly process Qt events
+                if (!qtEventTimer && qGuiApp) {
+                    qtEventTimer = std::make_unique<QtEventProcessorTimer>(quickView);
+                    qtEventTimer->startTimer(16); // 60 FPS
+                    std::cout << "=== Started JUCE Qt event processing timer for standalone ===" << std::endl;
+                }
+                #endif
+                
+                std::cout << "=== Forced QQuickView update and render loop start ===" << std::endl;
+            }
+            
             std::cout << "=== Qt window made visible, raised, and update requested ===" << std::endl;
         }
     }
 
     std::unique_ptr<QWindow> foreignWindow;
     std::unique_ptr<QWindow> window;
+    std::unique_ptr<QtEventProcessorTimer> qtEventTimer; // For standalone Qt event processing
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Pimpl)
 };
